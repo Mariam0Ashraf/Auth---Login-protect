@@ -1,5 +1,6 @@
 const express = require("express");
 const authService = require("../services/authService");
+const { requireAuth } = require("../middleware/requireAuth");
 
 const router = express.Router();
 
@@ -39,6 +40,13 @@ router.post("/login", async (req, res) => {
     expires_at: data.session.expires_at,
     user: { id: data.user.id, email: data.user.email },
   });
+});
+
+// Protected: the guard verifies the token before this route ends its session.
+router.post("/logout", requireAuth, async (req, res) => {
+  await authService.logOut(req.token);
+
+  res.status(204).send();
 });
 
 module.exports = router;

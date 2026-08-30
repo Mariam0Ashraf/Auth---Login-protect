@@ -24,6 +24,25 @@ function verifyToken(token) {
   return supabase.auth.getUser(token);
 }
 
+// Ends the session the token belongs to. The SDK's signOut() reads the session
+// from client-side storage, and this server deliberately stores none
+// (persistSession: false), so it would sign out nobody. Calling the same
+// endpoint signOut() calls, with the caller's own token, is what actually
+// revokes it. scope=global drops every refresh token for that user.
+async function logOut(token) {
+  const response = await fetch(`${process.env.SUPABASE_URL}/auth/v1/logout?scope=global`, {
+    method: "POST",
+    headers: {
+      apikey: process.env.SUPABASE_KEY,
+      Authorization: `Bearer ${token}`,
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(`Supabase logout answered ${response.status}`);
+  }
+}
+
 // Only the fields that are safe to hand back to the client.
 function toSafeUser(user) {
   return {
@@ -33,4 +52,4 @@ function toSafeUser(user) {
   };
 }
 
-module.exports = { hasCredentials, signUp, logIn, verifyToken, toSafeUser };
+module.exports = { hasCredentials, signUp, logIn, verifyToken, logOut, toSafeUser };
