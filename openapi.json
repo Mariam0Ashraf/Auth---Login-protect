@@ -1,0 +1,226 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "Auth API",
+    "version": "1.0",
+    "description": "Sign up, log in and log out with Supabase Auth. Protected routes open only for a verified bearer token.\n\nTo try a locked route: run POST /auth/login, copy the access_token, click Authorize above and paste it in."
+  },
+  "servers": [
+    {
+      "url": "http://localhost:3000"
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "The access_token returned by POST /auth/login. Swagger sends it as: Authorization: Bearer <token>"
+      }
+    },
+    "schemas": {
+      "Credentials": {
+        "type": "object",
+        "required": ["email", "password"],
+        "properties": {
+          "email": { "type": "string", "example": "you@flyrank.dev" },
+          "password": { "type": "string", "example": "password123" }
+        }
+      },
+      "Error": {
+        "type": "object",
+        "properties": {
+          "error": { "type": "string" }
+        }
+      }
+    }
+  },
+  "paths": {
+    "/auth/signup": {
+      "post": {
+        "tags": ["auth"],
+        "summary": "Create a new user account",
+        "description": "No auth. Sends the credentials to Supabase, which hashes the password and stores the user.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/Credentials" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Account created",
+            "content": {
+              "application/json": {
+                "example": {
+                  "user": {
+                    "id": "45089f30-6412-4823-b886-d1a72047be0d",
+                    "email": "you@flyrank.dev"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Email or password missing, or Supabase rejected the address",
+            "content": {
+              "application/json": {
+                "example": { "error": "Email and password are required" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/login": {
+      "post": {
+        "tags": ["auth"],
+        "summary": "Authenticate and return a JWT",
+        "description": "No auth. On success returns the access token to paste into the Authorize box.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/Credentials" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Logged in",
+            "content": {
+              "application/json": {
+                "example": {
+                  "access_token": "eyJhbGciOiJFUzI1NiIsImtpZCI6...",
+                  "refresh_token": "zdn65z3dfp6f",
+                  "token_type": "bearer",
+                  "expires_at": 1788100388,
+                  "user": {
+                    "id": "45089f30-6412-4823-b886-d1a72047be0d",
+                    "email": "you@flyrank.dev"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Email or password missing",
+            "content": {
+              "application/json": {
+                "example": { "error": "Email and password are required" }
+              }
+            }
+          },
+          "401": {
+            "description": "Supabase rejected the credentials",
+            "content": {
+              "application/json": {
+                "example": { "error": "Invalid login credentials" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/logout": {
+      "post": {
+        "tags": ["auth"],
+        "summary": "End the user's session",
+        "description": "Protected. Revokes the session the token belongs to, so the same token stops working immediately.",
+        "security": [{ "bearerAuth": [] }],
+        "responses": {
+          "204": { "description": "Session ended, no body returned" },
+          "401": {
+            "description": "Token missing, malformed, invalid or expired",
+            "content": {
+              "application/json": {
+                "example": { "error": "Access token required" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/protected/profile": {
+      "get": {
+        "tags": ["protected"],
+        "summary": "Read private profile data",
+        "description": "Protected. The auth middleware verifies the token with Supabase before this route runs.",
+        "security": [{ "bearerAuth": [] }],
+        "responses": {
+          "200": {
+            "description": "The verified user's safe metadata",
+            "content": {
+              "application/json": {
+                "example": {
+                  "user": {
+                    "id": "45089f30-6412-4823-b886-d1a72047be0d",
+                    "email": "you@flyrank.dev",
+                    "created_at": "2026-08-30T13:41:52.45102Z"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Token missing, malformed, invalid or expired",
+            "content": {
+              "application/json": {
+                "example": { "error": "Invalid or expired token" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/protected/dashboard": {
+      "get": {
+        "tags": ["protected"],
+        "summary": "A second protected route, guarded by the same middleware",
+        "description": "Protected. Exists to prove the guard is reusable: this route contains no auth code of its own.",
+        "security": [{ "bearerAuth": [] }],
+        "responses": {
+          "200": {
+            "description": "A greeting for the verified user",
+            "content": {
+              "application/json": {
+                "example": {
+                  "message": "Welcome back, you@flyrank.dev",
+                  "last_sign_in_at": "2026-08-30T13:55:55.265047Z"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Token missing, malformed, invalid or expired",
+            "content": {
+              "application/json": {
+                "example": { "error": "Access token required" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/public/info": {
+      "get": {
+        "tags": ["public"],
+        "summary": "Read public, open data",
+        "description": "No auth. Anyone can call this, with or without a token.",
+        "responses": {
+          "200": {
+            "description": "A public message",
+            "content": {
+              "application/json": {
+                "example": { "message": "Welcome stranger! This info is public." }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

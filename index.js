@@ -1,4 +1,6 @@
 const express = require("express");
+const swaggerUi = require("swagger-ui-express");
+const openapi = require("./openapi.json");
 const { checkConnection } = require("./supabase");
 const authRoutes = require("./routes/authRoutes");
 const publicRoutes = require("./routes/publicRoutes");
@@ -8,6 +10,7 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.use(express.json());
+app.use("/docs", swaggerUi.serve, swaggerUi.setup(openapi));
 app.use("/auth", authRoutes);
 app.use("/public", publicRoutes);
 app.use("/protected", protectedRoutes);
