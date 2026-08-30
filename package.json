@@ -1,0 +1,21 @@
+{
+  "name": "auth-practice",
+  "version": "1.0.0",
+  "description": "Secure API with Supabase Auth: signup, login, logout and JWT-protected routes.",
+  "main": "index.js",
+  "scripts": {
+    "start": "node --env-file-if-exists=.env index.js",
+    "dev": "nodemon --env-file-if-exists=.env index.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "@supabase/supabase-js": "^2.112.4",
+    "express": "^5.2.1"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.14"
+  }
+}
