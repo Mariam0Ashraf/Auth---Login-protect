@@ -1,12 +1,16 @@
 const express = require("express");
 const { checkConnection } = require("./supabase");
 const authRoutes = require("./routes/authRoutes");
+const publicRoutes = require("./routes/publicRoutes");
+const protectedRoutes = require("./routes/protectedRoutes");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.use(express.json());
 app.use("/auth", authRoutes);
+app.use("/public", publicRoutes);
+app.use("/protected", protectedRoutes);
 
 checkConnection()
   .then(() => {
