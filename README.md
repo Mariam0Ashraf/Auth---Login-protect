@@ -208,6 +208,161 @@ only 512 bits of signature. The final character has 4 bits nothing reads, and `A
 character in the middle — header, payload or signature — returns `401`, and so does
 changing the last character to one that does move the decoded bytes.
 
+## AI vs me
+
+The AI version is in `ai-version/` and never touches my own code. It runs on port
+3001, so both APIs can run at the same time:
+
+```bash
+cd ai-version
+cp ../.env .env      # then change PORT to 3001
+npm start
+```
+
+### The prompt I used
+
+The full prompt is in [`docs/ai-prompt.md`](docs/ai-prompt.md). It specifies the
+lane (Node.js + Express), Supabase as the identity provider, all five routes, the
+status codes (`201` signup, `200` login, `204` logout, `400` missing input, `401`
+for a missing, malformed, invalid or expired token), the exact error bodies, token
+verification through one reusable middleware applied to more than one route, and
+Swagger UI at `/docs` with a bearer `securitySchemes` block.
+
+### Did it run?
+
+Yes, first try, and the happy path looked perfect. `POST /auth/signup` returned
+`201`, `POST /auth/login` returned `200` with both tokens, `/public/info` returned
+`200`, both protected routes returned `200` with a valid token, `/auth/logout`
+returned `204`, and `/docs` rendered with padlocks on the three protected routes.
+Every checkpoint that uses a *correct* token passed.
+
+Then I fired the failure cases at it, and it fell apart.
+
+### What it got wrong
+
+**It never checks the auth scheme.** Its token extraction is one line:
+
+```js
+const token = authHeader.split(" ")[1];
+```
+
+That takes the second word of the header and asks no questions about the first.
+So all three of these return `200`:
+
+```
+Authorization: Bearer <valid token>     -> 200
+Authorization: Basic  <valid token>     -> 200
+Authorization: Whatever <valid token>   -> 200
+```
+
+Mine splits on whitespace, checks the scheme is `bearer` case-insensitively, and
+rejects anything with extra junk after the token. Its version also mishandles the
+plain `Authorization: <token>` shape — `split(" ")[1]` is `undefined`, which it
+catches and turns into `401`, so that one case works by luck rather than by
+checking.
+
+**It trusts `getUser` without checking the error.** This is the serious one:
+
+```js
+const { data } = await supabase.auth.getUser(token);
+return data.user;              // error is destructured away and never read
+```
+
+When a token is invalid, Supabase returns an *error* — it does not throw. So
+nothing lands in the `catch`, `data.user` is `null`, and the middleware runs
+`req.user = null` and calls `next()`. **The guard passes an unverified request
+straight through to the route.**
+
+An invalid token gives `500`, not `401`, and the response is an HTML page with a
+stack trace and my file paths in it:
+
+```
+TypeError: Cannot read properties of null (reading 'id')
+    at ...\ai-version\routes\protectedRoutes.js:8:18
+```
+
+That `500` is misleading, because it makes the guard look like it is at least
+stopping the request. It is not. `/protected/profile` only crashes because it
+touches `req.user.id`. `POST /auth/logout` never touches `req.user` — so nothing
+crashes, and it answers:
+
+```
+logout with "Bearer total.garbage" -> 204
+logout with "Bearer xyz"           -> 204
+```
+
+A protected route returning `204` to a caller holding no valid token at all. Mine
+returns `401`, because `requireAuth` checks `if (error || !data?.user)` before it
+calls `next()`.
+
+**Its logout signs out the wrong person.** It calls `supabase.auth.signOut()` on
+the shared module-level client, and it created that client with
+`createClient(url, key)` and no options — so `persistSession` defaults to `true`
+and the one shared client keeps whichever session logged in most recently. Two
+users on one server share it. I logged in as alice, then as bob, then had **alice**
+call logout:
+
+```
+before: alice -> 200 , bob -> 200
+alice calls /auth/logout -> 204
+after : alice -> 200 , bob -> 401
+```
+
+Exactly backwards. Alice's own session survived, and bob — who did nothing — was
+signed out. On a server with real traffic, every logout would eject whichever user
+happened to log in last. My version passes the caller's own token to Supabase, so
+a logout can only ever end the session of the person who asked for it.
+
+**It has no startup check.** Its `config.js` reads the env vars and calls
+`createClient` without testing either. `createClient` never touches the network, so
+with a typo in `SUPABASE_URL` the server still prints `Server running and connected
+to Supabase` and only fails on the first request — a log line that states something
+it never verified.
+
+### What my prompt forgot to specify
+
+- **That the scheme itself must be checked.** I said the header must look like
+  `Authorization: Bearer <token>`, but I never said to *reject* other schemes, so
+  it only read the position of the token and ignored the word in front of it.
+- **That an invalid token must not reach the route.** I specified the `401` and
+  the body, but not the rule underneath — that the handler must never run for an
+  unverified request. It produced the status codes I asked for on the paths I
+  described, and left the guard open on the path I did not.
+- **Which session logout ends.** I wrote "ends the user's session" and assumed
+  "the user" was obvious. It is not obvious to a shared client that stores one
+  session globally.
+- **That errors must never leak internals.** I asked for JSON errors on the cases
+  I listed, and said nothing about unexpected ones, so an unhandled crash falls
+  through to Express' HTML error page with a stack trace.
+- **Whether the server should verify it can reach Supabase at startup.** I never
+  mentioned it, so it never did.
+
+Every one of those is a gap in my spec, not a lapse by the AI. It implemented what
+I wrote. The failures cluster exactly where my sentences stopped.
+
+### The rematch
+
+I added the missing rules to the prompt: reject any scheme other than `Bearer`;
+`getUser` returns an error object rather than throwing, so check it and never call
+`next()` unless a user came back; pass the caller's own token to the sign-out call
+and create the client with `persistSession: false` so no session is shared between
+requests; add a catch-all error handler so every response is JSON; and verify the
+Supabase connection before the server starts listening. The second version returned
+`401` on every failure case, including `logout` with a garbage token, and alice's
+logout stopped touching bob.
+
+The differences the first time were not the AI being careless. They were the five
+sentences I did not write.
+
+### The honest caveat
+
+I could not run this as a true blind test. The same assistant that helped me build
+Stages 0–6 generated `ai-version/`, working only from the prompt in
+`docs/ai-prompt.md` rather than from my finished code — but it is not the
+independent second opinion a different tool would give. What the exercise did prove
+holds regardless: the failures above are real, reproducible against a running
+server, and every one of them traces back to a sentence missing from the spec.
+
 ## Status codes
 
 `200` OK · `201` Created · `204` No Content · `400` Bad Request ·

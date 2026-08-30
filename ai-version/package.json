@@ -1,0 +1,14 @@
+{
+  "name": "ai-version-auth-api",
+  "version": "1.0.0",
+  "main": "server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node --env-file-if-exists=.env server.js"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.112.4",
+    "express": "^5.2.1",
+    "swagger-ui-express": "^5.0.1"
+  }
+}
