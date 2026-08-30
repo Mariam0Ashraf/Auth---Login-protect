@@ -1,4 +1,5 @@
 const express = require("express");
+const authService = require("../services/authService");
 
 const router = express.Router();
 
@@ -19,16 +20,22 @@ function extractBearerToken(header) {
   return token;
 }
 
-router.get("/profile", (req, res) => {
+router.get("/profile", async (req, res) => {
   const token = extractBearerToken(req.headers.authorization);
 
   if (!token) {
     return res.status(401).json({ error: "Access token required" });
   }
 
-  // Stage 3 replaces this with a real check against Supabase. For now the
-  // route only proves a token was presented, not that it is genuine.
-  res.json({ message: "A token was presented (not verified yet)" });
+  const { data, error } = await authService.verifyToken(token);
+
+  // A tampered or expired token sets error; getUser can also answer with no
+  // user and no error, so both are checked before the door opens.
+  if (error || !data?.user) {
+    return res.status(401).json({ error: "Invalid or expired token" });
+  }
+
+  res.json({ user: authService.toSafeUser(data.user) });
 });
 
 module.exports = router;

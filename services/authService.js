@@ -18,4 +18,19 @@ function logIn(email, password) {
   return supabase.auth.signInWithPassword({ email, password });
 }
 
-module.exports = { hasCredentials, signUp, logIn };
+// getUser makes a real network call to Supabase, which holds the signing key.
+// That is why its answer can be trusted and a locally decoded JWT cannot.
+function verifyToken(token) {
+  return supabase.auth.getUser(token);
+}
+
+// Only the fields that are safe to hand back to the client.
+function toSafeUser(user) {
+  return {
+    id: user.id,
+    email: user.email,
+    created_at: user.created_at,
+  };
+}
+
+module.exports = { hasCredentials, signUp, logIn, verifyToken, toSafeUser };
